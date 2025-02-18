@@ -1,0 +1,228 @@
+---
+title: "Figure_7"
+author: "Laura Childers"
+date: "2025-02-17"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Purpose: 
+This script was used to generate Figure 7 plots in "Protein absorption in the zebrafish gut is regulated by interactions between lysosome rich enterocytes and the microbiome" (Childers et al., 2025).
+
+# Load libraries
+```{r}
+library(phyloseq)
+library(ggplot2)
+library(plyr)
+library(ggtext)
+library(dplyr)
+library(textshape)
+library(readr)
+library(tibble)
+library(hrbrthemes)
+library(data.table)
+library(tidyverse)
+library(ggthemes)
+```
+# Set theme for gglpot2
+```{r}
+theme_set(theme_bw())
+```
+
+# Load phyloseq object
+```{r}
+ps <- readRDS(file = "~/Bagnat/16S experiments/5887_cubn_HP-LP_30dpf_2024/ps_pruned_2-3-24.rds")
+print(ps) 
+```
+# Subset samples
+## Subset 30 dpf larvae 
+```{r}
+fish.ps <- subset_samples(ps, sample_type == "ZebrafishLarva")
+fish_30.ps <- subset_samples(fish.ps, dpf == "30")
+```
+
+## Subset taxa
+```{r}
+fish_30_filt <- subset_taxa(fish_30.ps, Genus != "-1")
+fish_30.ps #3170 taxa, 30 samples 
+fish_30_filt #1917 taxa, 30 samples
+```
+
+# Figure 7B - Bray Curtis distance MDS plot
+## The available distance methods coded in distance
+```{r}
+dist_methods <- unlist(distanceMethodList)
+print(dist_methods)
+```
+
+## Remove the two distance-methods that require a tree, and the generic custom method that requires user-defined distance arguments.
+```{r}
+# These require tree
+dist_methods[(1:3)]
+```
+```{r}
+# Remove them from the vector
+dist_methods <- dist_methods[-(1:3)]
+# This is the user-defined method:
+dist_methods["designdist"]
+```
+```{r}
+# Remove the user-defined distance
+dist_methods = dist_methods[-which(dist_methods=="ANY")]
+```
+
+## Generate plot
+```{r}
+plist <- vector("list", length(dist_methods))
+names(plist) = dist_methods
+for( i in dist_methods ){
+    # Calculate distance matrix
+    iDist <- distance(fish_30_filt, method=i)
+    # Calculate ordination
+    iMDS  <- ordinate(fish_30_filt, "MDS", distance=iDist)
+    ## Make plot
+    # Don't carry over previous plot (if error, p will be blank)
+    p <- NULL
+    # Create plot, store as temp variable, p
+    p <- plot_ordination(fish_30_filt, iMDS, color="genotype_diet", shape="diet")
+    # Add title to each plot
+    p <- p + ggtitle(paste("MDS using distance method ", i, sep=""))
+    # Save the graphic to file.
+    plist[[i]] = p
+}
+```
+
+```{r}
+df = ldply(plist, function(x) x$data)
+names(df)[1] <- "distance"
+p = ggplot(df, aes(Axis.1, Axis.2, color=genotype_diet, shape=diet))
+p = p + geom_point(size=3, alpha=0.5)
+p = p + facet_wrap(~distance, scales="free")
+p = p + ggtitle("MDS on various distance metrics for cubn 30 dpf dataset")
+p
+```
+
+```{r}
+p = print(plist[["bray"]]) + geom_point(size = 4) + theme_bw() +
+  labs(color = "Genotype & Diet", shape = "Diet") +
+  scale_color_discrete(labels = c(cubn_het_HP = "HP-fed, cubn het", cubn_het_LP = "LP-fed, cubn het", cubn_mut_HP = "HP-fed, cubn mutant", cubn_mut_LP = "LP-fed, cubn mutant")) +
+  scale_shape_discrete(breaks = c("HP", "LP"), labels = c("High Protein (HP)", "Low Protein (LP)")) +
+  theme(plot.title = element_text(size = 16), 
+        legend.text = element_text(size = 14),
+        legend.title = element_text(size = 14))
+p
+```
+
+# Figure 7E - Top 10 class - heatmap
+
+## Subset 30 dpf cubn larvae and controls
+```{r}
+cubn.ps <- subset_samples(ps, genotype_group %in% c("control", "cubn"))
+sample_data(cubn.ps)
+
+# controls, cubn fish at 30 dpf
+cubn_30.ps <- subset_samples(cubn.ps, dpf %in% c("control", "30"))
+sample_data(cubn_30.ps)
+```
+
+##Remove taxa with 0 counts
+
+```{r}
+cubn_30_prune <- prune_taxa(taxa_sums(cubn_30.ps) > 0, cubn_30.ps)
+cubn_30.ps 
+cubn_30_prune 
+```
+
+## taxglom - class level 
+```{r}
+cubn_30_glom_class <- cubn_30_prune %>% tax_glom(taxrank = "Class")
+cubn_30_glom_class 
+```
+
+## Transform subset data: relative abundance  
+
+```{r}
+cubn_30_rel_class = transform_sample_counts(cubn_30_glom_class, function(x) x / sum(x) )
+cubn_30_rel_class 
+sample_sums(cubn_30_rel_class)
+```
+
+## Generate plot
+```{r}
+facet_titles = c(cubn_het_HP = "HP-fed, cubn het", cubn_het_LP = "LP-fed, cubn het", cubn_mut_HP = "HP-fed, cubn mutant", cubn_mut_LP = "LP-fed, cubn mutant", food_control = "Diet", water_cubn = "Tank water")
+
+top10 <- names(sort(taxa_sums(cubn_30_rel_class), decreasing=TRUE))[1:10]
+
+prune_taxa(top10, cubn_30_rel_class) -> cubn_top10_rel_class
+
+data.com_class <- p_class$data
+
+p.heat_class <- ggplot(data.com_class, aes(x = Sample, y = Class)) + 
+  geom_tile(aes(fill = Abundance)) + 
+  scale_fill_distiller("Abundance", palette = "RdYlBu") + 
+  facet_grid(~ genotype_diet, scales = "free", space = "free_x", labeller = labeller(genotype_diet = facet_titles, groupwrap = label_wrap_gen(10))) +
+  theme_bw() +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=10), 
+        strip.text.x.top = element_text(size=8),
+        axis.title.y = element_text(size=12),
+        axis.title.x = element_text(size=12),
+        legend.title = element_text(size=12),
+        legend.text = element_text(size=10),
+        plot.title = element_text(size=14)) +
+  theme(legend.key = element_blank(), 
+                     strip.background = element_rect(colour="black", fill="white"))
+p.heat_class
+```
+
+# Figure 7G - Top 10 genera - heatmap
+
+## taxglom - genus level 
+```{r}
+cubn_30_glom_genus <- cubn_30_prune %>% tax_glom(taxrank = "Genus")
+cubn_30_glom_genus 
+```
+
+## Transform subset data: relative abundance  
+
+```{r}
+cubn_30_rel_genus = transform_sample_counts(cubn_30_glom_genus, function(x) x / sum(x) )
+cubn_30_rel_genus 
+sample_sums(cubn_30_rel_genus)
+```
+
+## Generate plot
+```{r}
+facet_titles = c(cubn_het_HP = "HP-fed, cubn het", cubn_het_LP = "LP-fed, cubn het", cubn_mut_HP = "HP-fed, cubn mutant", cubn_mut_LP = "LP-fed, cubn mutant", food_control = "Diet", water_cubn = "Tank water")
+
+top10 <- names(sort(taxa_sums(cubn_30_rel_genus), decreasing=TRUE))[1:10]
+prune_taxa(top10, cubn_30_rel_genus) -> cubn_top10_rel
+
+p = plot_bar(cubn_top10_rel, fill = "Genus") 
+
+data.com <- p$data
+colnames(data.com)
+
+p.heat <- ggplot(data.com, aes(x = Sample, y = Genus)) + 
+  geom_tile(aes(fill = Abundance)) + 
+  scale_fill_distiller("Abundance", palette = "RdYlBu") + 
+  facet_grid(~ genotype_diet, scales = "free", space = "free_x", labeller = labeller(genotype_diet = facet_titles, groupwrap = label_wrap_gen(10))) +
+  theme_bw() +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=10), 
+        strip.text.x.top = element_text(size=8),
+        axis.title.y = element_text(size=12),
+        axis.title.x = element_text(size=12),
+        legend.title = element_text(size=12),
+        legend.text = element_text(size=10),
+        plot.title = element_text(size=14)) +
+  theme(legend.key = element_blank(), 
+                     strip.background = element_rect(colour="black", fill="white"))
+p.heat
+```
+
+```{r}
+sessionInfo()
+```
+
