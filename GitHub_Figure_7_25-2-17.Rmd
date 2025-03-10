@@ -1,7 +1,7 @@
 ---
-title: "Figure_7"
+title: "scRNA-seq_figure_scripts"
 author: "Laura Childers"
-date: "2025-02-17"
+date: "2025-02-24"
 output: html_document
 ---
 
@@ -9,220 +9,908 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-# Purpose: 
-This script was used to generate Figure 7 plots in "Protein absorption in the zebrafish gut is regulated by interactions between lysosome rich enterocytes and the microbiome" (Childers et al., 2025).
+# Purpose
 
-# Load libraries
+This code was used to generate figures in "Protein absorption in the zebrafish gut is regulated by interactions between lysosome rich enterocytes and the microbiome" (Childers et al., 2025).
+
+# Library
 ```{r}
-library(phyloseq)
-library(ggplot2)
-library(plyr)
-library(ggtext)
-library(dplyr)
-library(textshape)
-library(readr)
-library(tibble)
-library(hrbrthemes)
-library(data.table)
+# load the libraries
 library(tidyverse)
-library(ggthemes)
-```
-# Set theme for gglpot2
-```{r}
-theme_set(theme_bw())
+library(org.Dr.eg.db); packageVersion("org.Dr.eg.db") #3.18.0
+library(igraph); packageVersion("igraph") #2.0.1.9011 
+library(clusterProfiler); packageVersion("clusterProfiler") #4.10.0
+library(enrichplot)
+library(tibble)
+library(grDevices)
+library(ggplot2)
+library(DOSE)
+library(Seurat)
+library(dplyr)
+library(readxl)
+library(writexl)
+
+# Color palette libraries 
+library(RColorBrewer)
+library(ggplot2)
+library(dplyr)
+library(magrittr)
+library(patchwork)
+library(scCustomize)
+library(qs)
+library(viridisLite)
+library(viridis)
+
+# Volcano
+library(RCurl)
+library(textshaping)
+library(EnhancedVolcano)
+
+# KEGG pathways
+library(tibble)
+library(org.Dr.eg.db); packageVersion("org.Dr.eg.db") #3.18.0
+library(igraph); packageVersion("igraph") #2.0.1.9011 
+library(clusterProfiler); packageVersion("clusterProfiler") #4.10.0
+library(enrichplot)
+library(grDevices)
+library(ggplot2)
+library(DOSE)
 ```
 
-# Load phyloseq object
+# Load Seurat object
 ```{r}
-ps <- readRDS(file = "~/Bagnat/16S experiments/5887_cubn_HP-LP_30dpf_2024/ps_pruned_2-3-24.rds")
-print(ps) 
-```
-# Subset samples
-## Subset 30 dpf larvae 
-```{r}
-fish.ps <- subset_samples(ps, sample_type == "ZebrafishLarva")
-fish_30.ps <- subset_samples(fish.ps, dpf == "30")
+merged_v5 = readRDS("~/merged_v5.rds")
+merged_v5[[]]
+Idents(merged_v5) <- "res0.5_20240415"
 ```
 
-## Subset taxa
+# Figure 3
+
+## 3B
 ```{r}
-fish_30_filt <- subset_taxa(fish_30.ps, Genus != "-1")
-fish_30.ps #3170 taxa, 30 samples 
-fish_30_filt #1917 taxa, 30 samples
+myLevels <- c("Pharynx",
+              "Anterior enterocytes",
+              "Ileocytes",
+              "Anterior LREs",
+              "Posterior LREs",
+              "Cloaca 3",
+              "Goblet",
+              "Enteroendocrine",
+              "Neuronal",
+              "Acinar",
+              "Best4/Otop2 enterocytes",
+              "Pharnyx, esophagus, cloaca 1",
+              "Pharnyx, esophagus, cloaca 2",
+              "Epidermis",
+              "Mix of tuft, glia, neutrophil, macrophage",
+              "Cluster 5",
+              "Cluster 15")
+
+factor(Idents(merged_v5), levels= myLevels)
+Idents(merged_v5) <- factor(Idents(merged_v5), levels= myLevels)
+
+p1 = DimPlot_scCustom(seurat_object = merged_v5, 
+                      pt.size = 0.75,
+                      label = FALSE) # polychrome default palette
+p2 = DimPlot_scCustom(seurat_object = merged_v5, 
+                      pt.size = 0.75,
+                      colors_use = DiscretePalette_scCustomize(num_colors = 17, palette = "varibow"), 
+                      label = FALSE)
+p3 = DimPlot_scCustom(seurat_object = merged_v5, 
+                      pt.size = 0.75, 
+                      colors_use = DiscretePalette_scCustomize(num_colors = 17, palette = "alphabet"),
+                      label = FALSE)
+p4 = DimPlot_scCustom(seurat_object = merged_v5, 
+                      pt.size = 0.75, 
+                      colors_use = DiscretePalette_scCustomize(num_colors = 17, palette = "alphabet2"),
+                      label = FALSE)
+
+p1
+p2
+p3
+p4
 ```
 
-# Figure 7B - Bray Curtis distance MDS plot
-## The available distance methods coded in distance
+## 3C
 ```{r}
-dist_methods <- unlist(distanceMethodList)
-print(dist_methods)
-```
+myLevels <- c("Cluster 15",
+              "Cluster 5",
+              "Mix of tuft, glia, neutrophil, macrophage",
+              "Epidermis",
+              "Pharnyx, esophagus, cloaca 2",
+              "Pharnyx, esophagus, cloaca 1",
+              "Best4/Otop2 enterocytes",
+              "Acinar",
+              "Neuronal",
+              "Enteroendocrine",
+              "Goblet",
+              "Cloaca 3",
+              "Posterior LREs",
+              "Anterior LREs",
+              "Ileocytes",
+              "Anterior enterocytes",
+              "Pharynx") 
 
-## Remove the two distance-methods that require a tree, and the generic custom method that requires user-defined distance arguments.
-```{r}
-# These require tree
-dist_methods[(1:3)]
-```
-```{r}
-# Remove them from the vector
-dist_methods <- dist_methods[-(1:3)]
-# This is the user-defined method:
-dist_methods["designdist"]
-```
-```{r}
-# Remove the user-defined distance
-dist_methods = dist_methods[-which(dist_methods=="ANY")]
-```
+factor(Idents(merged_v5), levels= myLevels)
+Idents(merged_v5) <- factor(Idents(merged_v5), levels= myLevels)
 
-## Generate plot
-```{r}
-plist <- vector("list", length(dist_methods))
-names(plist) = dist_methods
-for( i in dist_methods ){
-    # Calculate distance matrix
-    iDist <- distance(fish_30_filt, method=i)
-    # Calculate ordination
-    iMDS  <- ordinate(fish_30_filt, "MDS", distance=iDist)
-    ## Make plot
-    # Don't carry over previous plot (if error, p will be blank)
-    p <- NULL
-    # Create plot, store as temp variable, p
-    p <- plot_ordination(fish_30_filt, iMDS, color="genotype_diet", shape="diet")
-    # Add title to each plot
-    p <- p + ggtitle(paste("MDS using distance method ", i, sep=""))
-    # Save the graphic to file.
-    plist[[i]] = p
-}
-```
-
-```{r}
-df = ldply(plist, function(x) x$data)
-names(df)[1] <- "distance"
-p = ggplot(df, aes(Axis.1, Axis.2, color=genotype_diet, shape=diet))
-p = p + geom_point(size=3, alpha=0.5)
-p = p + facet_wrap(~distance, scales="free")
-p = p + ggtitle("MDS on various distance metrics for cubn 30 dpf dataset")
+markers = c("cnfn", "basp1", "aqp3a", # Pharnyx
+            "fabp2", "rbp2", "ada", # Anterior
+            "fabp6", "tmigd1", "slc10a2", # Ileocytes
+            "dab2", "cubn", "ctsbb", "lrp2b", "cpvl", # LREs
+            "il1b", "hamp", "saa", # Cloaca 3
+            "sytl2b", "agr2", "stard10", # Goblet
+            "scg3", "neurod1", "pax6b", # EEC
+            "elavl3", "gpm6aa", "nova2", # Neuronal
+            "cuzd1.1", "cuzd1.2", "pdia2", # Acinar
+            "best4", "otop2", "cftr", # Best4/Otop2
+            "sstr5", "slc12a10.1", "cldn23b", # PEC1
+            "lmna", "kcnk5b", "prdm1a", # PEC2
+            "cyt1", "krt5", "spaca4l", # Epidermis
+            "spry2", "lyz", "stmn1a", # Mix
+            "rbp4", "cd81a", "pmp22a", # Cluster 5
+            "syt5b", "snap25b", "crx") # Cluster 15
+             
+p = DotPlot(merged_v5, features = markers) + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
 p
 ```
 
+## 3D
 ```{r}
-p = print(plist[["bray"]]) + geom_point(size = 4) + theme_bw() +
-  labs(color = "Genotype & Diet", shape = "Diet") +
-  scale_color_discrete(labels = c(cubn_het_HP = "HP-fed, cubn het", cubn_het_LP = "LP-fed, cubn het", cubn_mut_HP = "HP-fed, cubn mutant", cubn_mut_LP = "LP-fed, cubn mutant")) +
-  scale_shape_discrete(breaks = c("HP", "LP"), labels = c("High Protein (HP)", "Low Protein (LP)")) +
-  theme(plot.title = element_text(size = 16), 
-        legend.text = element_text(size = 14),
-        legend.title = element_text(size = 14))
+Idents(merged_v5) <- "res0.5_20240415"
+myLevels <- c("Pharynx",
+              "Anterior enterocytes",
+              "Ileocytes",
+              "Anterior LREs",
+              "Posterior LREs",
+              "Cloaca 3",
+              "Goblet",
+              "Enteroendocrine",
+              "Neuronal",
+              "Acinar",
+              "Best4/Otop2 enterocytes",
+              "Pharnyx, esophagus, cloaca 1",
+              "Pharnyx, esophagus, cloaca 2",
+              "Epidermis",
+              "Mix of tuft, glia, neutrophil, macrophage",
+              "Cluster 5",
+              "Cluster 15")
+
+factor(Idents(merged_v5), levels= myLevels)
+Idents(merged_v5) <- factor(Idents(merged_v5), levels= myLevels)
+
+p1 = DimPlot_scCustom(seurat_object = merged_v5, 
+                      pt.size = 0.75,
+                      split.by = "condition",
+                      label = FALSE) # polychrome default palette
+
+p1
+```
+
+# Figure 3-supplement 1
+
+## S3C
+
+```{r}
+Cloaca_markers = FindMarkers(merged_v5, ident.1 = "Cloaca 3")
+Cloaca_2 <- Cloaca_markers %>% rownames_to_column("gene")
+Cloaca_2_df <- as.data.frame(Cloaca_2)
+head(Cloaca_2_df)
+```
+
+```{r}
+Cloaca_up <- Cloaca_2_df %>% filter(avg_log2FC > 0.5, p_val_adj < 0.05) %>% pull(gene)
+head(Cloaca_up) 
+```
+
+```{r}
+# converting gene name to ensembl id
+markers_Cloaca_up <- unlist(mget(Cloaca_up, envir=org.Dr.egSYMBOL2EG, ifnotfound = NA))  
+```
+
+```{r}
+# ont = all GO term ontologies are run
+GO_Cloaca_UP <- enrichGO(gene = markers_Cloaca_up, ont = "BP", OrgDb ="org.Dr.eg.db", readable=TRUE, pvalueCutoff = 0.05)
+
+# org.Dr.eg.db = genome wide annotation for zebrafish 
+# https://sib-swiss.github.io/single-cell-training/day3/day3-2_enrichment_analysis.html for explanation of GeneRatio
+# https://github.com/YuLab-SMU/clusterProfiler/issues/553
+```
+
+```{r}
+GO_Cloaca_UP_df <- as.data.frame(GO_Cloaca_UP)
+GO_Cloaca_UP_df
+```
+
+```{r}
+#All
+GO_Cloaca_plot <- dotplot(GO_Cloaca_UP, showCategory=20) + ggtitle(paste0("GO Terms: Enriched in Cloaca 3"))
+
+GO_Cloaca_plot
+```
+
+# S3D
+
+```{r}
+title <- ("Response to bacterium")
+genes <- c("il1b", "hamp", "cxcl8a", "saa", "irg1l", "mpx", "itln2", "gpr84", "lygl1", "pglyrp5", "tfa", "ly97.3", "irak3", "tnip1", "il22", "h2ax1", "hist1h2a3", "cebpb", "tnfrsf1a")
+
+p = EnhancedVolcano(markers, x = "avg_log2FC", y = "p_val_adj", lab = markers$gene,
+                    pCutoff = 0.05,
+                    FCcutoff = 0.5,
+                    selectLab = genes,
+                    drawConnectors = TRUE,
+                    boxedLabels = TRUE,
+                    legendLabels=c('NS','Log (base 2) FC > 0.5','P < 0.05',
+      'P < 0.05 & Log (base 2) FC > 0.5'),
+      legendPosition = 'right') + ggtitle(title)
+#p + ggplot2::coord_cartesian(xlim=c(-2.75, 1.5))
+p 
+```
+```{r}
+title <- ("Response to bacterium")
+genes <- c("il1b", "hamp", "cxcl8a", "saa", "irg1l", "mpx", "itln2", "gpr84", "lygl1", "pglyrp5", "tfa", "ly97.3", "irak3", "tnip1", "il22", "h2ax1", "hist1h2a3", "cebpb", "tnfrsf1a", "meltf")
+
+p = EnhancedVolcano(markers, x = "avg_log2FC", y = "p_val_adj", lab = markers$gene,
+                    pCutoff = 0.05,
+                    FCcutoff = 0.5,
+                    selectLab = genes,
+                    drawConnectors = TRUE,
+                    boxedLabels = TRUE,
+                    legendLabels=c('NS','Log (base 2) FC > 0.5','P < 0.05',
+      'P < 0.05 & Log (base 2) FC > 0.5'),
+      legendPosition = 'right') + ggtitle(title)
+#p + ggplot2::coord_cartesian(xlim=c(-2.75, 1.5))
+p 
+```
+
+## S3E
+
+```{r}
+all.genes <- rownames(merged_v5)
+merged_v5_scale <- ScaleData(merged_v5, features = all.genes)
+merged_v5_scale[["RNA"]]$scale.data
+```
+
+```{r}
+clusters <- c("Anterior enterocytes", "Enteroendocrine", "Cloaca 3", "Ileocytes", "Goblet", "Anterior LREs", "Posterior LREs", "Pharnyx, esophagus, cloaca 1", "Pharnyx, esophagus, cloaca 2")
+```
+
+```{r}
+## Subset Seurat object 
+Idents(merged_v5_scale) <- "res0.5_20240415"
+scaled_2 = subset(merged_v5_scale, idents = clusters)
+scaled_2[[]]
+
+Idents(scaled_2) <- "condition"
+CV_select = subset(scaled_2, ident = "CV")
+CV_select[[]]
+Idents(CV_select) <- "res0.5_20240415"
+```
+
+```{r}
+Idents(CV_select) <- "res0.5_20240415"
+myLevels <- c("Pharynx",
+              "Anterior enterocytes",
+              "Ileocytes",
+              "Anterior LREs",
+              "Posterior LREs",
+              "Cloaca 3",
+              "Goblet",
+              "Enteroendocrine",
+              "Neuronal",
+              "Acinar",
+              "Best4/Otop2 enterocytes",
+              "Pharnyx, esophagus, cloaca 1",
+              "Pharnyx, esophagus, cloaca 2")
+
+factor(Idents(CV_select), levels= myLevels)
+Idents(CV_select) <- factor(Idents(CV_select), levels= myLevels)
+
+title <- ("Response to bacteria")
+genes <- c("il1b", "hamp", "cxcl8a", "saa", "irg1l", "mpx", "itln2", "gpr84", "lygl1", "pglyrp5", "tfa", "ly97.3", "irak3", "tnip1", "il22", "h2ax1", "hist1h2a3", "cebpb", "tnfrsf1a")
+  
+p = DoHeatmap(subset(CV_select, downsample = 100), features = genes, label = FALSE) + 
+  theme(legend.text=element_text(size=14), legend.title=element_text(size=16)) +
+  ggtitle(title)
 p
 ```
 
-# Figure 7E - Top 10 class - heatmap
+# Figure 4 
 
-## Subset 30 dpf cubn larvae and controls
-```{r}
-cubn.ps <- subset_samples(ps, genotype_group %in% c("control", "cubn"))
-sample_data(cubn.ps)
-
-# controls, cubn fish at 30 dpf
-cubn_30.ps <- subset_samples(cubn.ps, dpf %in% c("control", "30"))
-sample_data(cubn_30.ps)
-```
-
-##Remove taxa with 0 counts
+## 4A
 
 ```{r}
-cubn_30_prune <- prune_taxa(taxa_sums(cubn_30.ps) > 0, cubn_30.ps)
-cubn_30.ps 
-cubn_30_prune 
-```
+GF = subset(merged_v5, condition == "GF")
+CV = subset(merged_v5, condition == "CV")
 
-## taxglom - class level 
-```{r}
-cubn_30_glom_class <- cubn_30_prune %>% tax_glom(taxrank = "Class")
-cubn_30_glom_class 
-```
-
-## Transform subset data: relative abundance  
-
-```{r}
-cubn_30_rel_class = transform_sample_counts(cubn_30_glom_class, function(x) x / sum(x) )
-cubn_30_rel_class 
-sample_sums(cubn_30_rel_class)
-```
-
-## Generate plot
-```{r}
-facet_titles = c(cubn_het_HP = "HP-fed, cubn het", cubn_het_LP = "LP-fed, cubn het", cubn_mut_HP = "HP-fed, cubn mutant", cubn_mut_LP = "LP-fed, cubn mutant", food_control = "Diet", water_cubn = "Tank water")
-
-top10 <- names(sort(taxa_sums(cubn_30_rel_class), decreasing=TRUE))[1:10]
-
-prune_taxa(top10, cubn_30_rel_class) -> cubn_top10_rel_class
-
-data.com_class <- p_class$data
-
-p.heat_class <- ggplot(data.com_class, aes(x = Sample, y = Class)) + 
-  geom_tile(aes(fill = Abundance)) + 
-  scale_fill_distiller("Abundance", palette = "RdYlBu") + 
-  facet_grid(~ genotype_diet, scales = "free", space = "free_x", labeller = labeller(genotype_diet = facet_titles, groupwrap = label_wrap_gen(10))) +
-  theme_bw() +
-    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=10), 
-        strip.text.x.top = element_text(size=8),
-        axis.title.y = element_text(size=12),
-        axis.title.x = element_text(size=12),
-        legend.title = element_text(size=12),
-        legend.text = element_text(size=10),
-        plot.title = element_text(size=14)) +
-  theme(legend.key = element_blank(), 
-                     strip.background = element_rect(colour="black", fill="white"))
-p.heat_class
-```
-
-# Figure 7G - Top 10 genera - heatmap
-
-## taxglom - genus level 
-```{r}
-cubn_30_glom_genus <- cubn_30_prune %>% tax_glom(taxrank = "Genus")
-cubn_30_glom_genus 
-```
-
-## Transform subset data: relative abundance  
-
-```{r}
-cubn_30_rel_genus = transform_sample_counts(cubn_30_glom_genus, function(x) x / sum(x) )
-cubn_30_rel_genus 
-sample_sums(cubn_30_rel_genus)
-```
-
-## Generate plot
-```{r}
-facet_titles = c(cubn_het_HP = "HP-fed, cubn het", cubn_het_LP = "LP-fed, cubn het", cubn_mut_HP = "HP-fed, cubn mutant", cubn_mut_LP = "LP-fed, cubn mutant", food_control = "Diet", water_cubn = "Tank water")
-
-top10 <- names(sort(taxa_sums(cubn_30_rel_genus), decreasing=TRUE))[1:10]
-prune_taxa(top10, cubn_30_rel_genus) -> cubn_top10_rel
-
-p = plot_bar(cubn_top10_rel, fill = "Genus") 
-
-data.com <- p$data
-colnames(data.com)
-
-p.heat <- ggplot(data.com, aes(x = Sample, y = Genus)) + 
-  geom_tile(aes(fill = Abundance)) + 
-  scale_fill_distiller("Abundance", palette = "RdYlBu") + 
-  facet_grid(~ genotype_diet, scales = "free", space = "free_x", labeller = labeller(genotype_diet = facet_titles, groupwrap = label_wrap_gen(10))) +
-  theme_bw() +
-    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=10), 
-        strip.text.x.top = element_text(size=8),
-        axis.title.y = element_text(size=12),
-        axis.title.x = element_text(size=12),
-        legend.title = element_text(size=12),
-        legend.text = element_text(size=10),
-        plot.title = element_text(size=14)) +
-  theme(legend.key = element_blank(), 
-                     strip.background = element_rect(colour="black", fill="white"))
-p.heat
+head(GF)
+head(CV)
 ```
 
 ```{r}
-sessionInfo()
+Idents(object = GF) <- GF@meta.data$celltype
+Idents(object = CV) <- CV@meta.data$celltype
+
+p1 = DimPlot(GF, cols = c("green", "magenta"), pt.size = 0.75) + ggtitle("GF condition: sorted GFP+ and GFP+/mCherry+ cells") + NoLegend()
+p2 = DimPlot(CV, cols = c("green", "magenta"), pt.size = 0.75) + ggtitle("CV condition: sorted GFP+ and GFP+/mCherry+ cells") + NoLegend()
+
+
+p1
+p2
 ```
+
+## 4E
+
+```{r}
+list_All <- c("fabp2", "chia.2", "fabp1b.1", "apobb.1", "apoa4b.1", "apoa1a", "tm4sf4", "afp4.1", "apoc2", "apoc1", "cstbb", "lrp2b", "ctsl.1", "dab2", "cpvl", "cubn", "tdo2b", "lgmn", "fabp6", "sptbn5")
+```
+
+```{r}
+p = EnhancedVolcano(All_df, x = "avg_log2FC", y = "p_val_adj", lab = All_df$gene,
+                    pCutoff = 0.05,
+                    FCcutoff = 0.5,
+                    selectLab = list_All,
+                    drawConnectors = TRUE,
+                    boxedLabels = TRUE,
+                    legendLabels=c('NS','Log (base 2) FC > 0.5','P < 0.05',
+      'P < 0.05 & Log (base 2) FC > 0.5'),
+      labSize = 7,
+      legendPosition = 'right') + ggtitle("mCherry+/mCherry- DEG (CV)")
+#p + ggplot2::coord_cartesian(xlim=c(-2.75, 1.5))
+p 
+
+ggsave(plot = p, filename = "~/Bagnat/single cell RNAseq/Figure_4/Volcano_All-cells_CV_mCherry_DEG_wider_labels.tiff", width = 11, height = 8)
+```
+
+## 4F
+
+```{r}
+all.genes <- rownames(merged_v5)
+merged_v3_scale <- ScaleData(merged_v5, features = all.genes)
+merged_v3_scale[["RNA"]]$scale.data
+```
+
+```{r}
+Idents(object = merged_v3_scale) <- "condition"
+CV <- subset(merged_v3_scale, ident = "CV")
+CV[[]]
+```
+
+```{r}
+# Subset CV Goblet Cells
+Idents(CV) <- CV@meta.data$res0.5_20220927
+CV_Goblet <- subset(CV, idents = "goblet cells")
+CV_Goblet[[]]
+
+# Subset CV EECs
+Idents(CV) <- CV@meta.data$res0.5_20220927
+CV_EEC <- subset(CV, idents = "Endocrine")
+CV_EEC[[]]
+
+# Subset CV Acinar
+Idents(CV) <- CV@meta.data$res0.5_20220927
+CV_Acinar <- subset(CV, idents = "Acinar")
+CV_Acinar[[]]
+```
+
+```{r}
+# Goblet cells
+Idents(CV_Goblet) <- "celltype"
+title <- ("Top 10 Genes: mCherry+ and mCherry- in CV Goblet cells")
+p1 =DoHeatmap(CV_Goblet, features = top10$gene, label = FALSE) + ggtitle(title) + theme(plot.title = element_text(size = 18, face = "bold"), legend.text = element_text(size = 14), legend.title = element_text(size = 14, face = "bold"))
+p1
+
+ggsave(plot = p1, filename = "~/Bagnat/single cell RNAseq/Figure_4/Heatmap_CV_Goblet_Top10_celltype_narrow.tiff", width = 4, height = 6)
+ggsave(plot = p1, filename = "~/Bagnat/single cell RNAseq/Figure_4/Heatmap_CV_Goblet_Top10_celltype_narrow_2.tiff", width = 5, height = 6)
+
+# EECs
+Idents(CV_EEC) <- "celltype"
+title <- ("Top 10 markers: mCherry+ and mCherry- in CV EEC cells")
+p2 =DoHeatmap(CV_EEC, features = top10$gene, label = FALSE) + ggtitle(title) + theme(plot.title = element_text(size = 18, face = "bold"), legend.text = element_text(size = 14), legend.title = element_text(size = 14, face = "bold"))
+p2
+
+ggsave(plot = p2, filename = "~/Bagnat/single cell RNAseq/Figure_4/Heatmap_CV_EEC_Top10_celltype_2_narrow.tiff", width = 4, height = 6)
+ggsave(plot = p2, filename = "~/Bagnat/single cell RNAseq/Figure_4/Heatmap_CV_EEC_Top10_celltype_2_narrow_2.tiff", width = 5, height = 6)
+
+# Acinar
+Idents(CV_Acinar) <- "celltype"
+title <- ("Top 10 Genes: CV Acinar")
+p3 =DoHeatmap(CV_Acinar, features = top10$gene, label = FALSE) + ggtitle(title) + theme(plot.title = element_text(size = 18, face = "bold"), legend.text = element_text(size = 14), legend.title = element_text(size = 14, face = "bold"))
+p3
+
+ggsave(plot = p3, filename = "~/Bagnat/single cell RNAseq/Figure_4/Heatmap_CV_Acinar_Top10_celltype_2_narrow.tiff", width = 4, height = 6)
+ggsave(plot = p3, filename = "~/Bagnat/single cell RNAseq/Figure_4/Heatmap_CV_Acinar_Top10_celltype_2_narrow_2.tiff", width = 5, height = 6)
+```
+
+# Figure 4-figure supplement 1
+
+## S4A
+```{r}
+Idents(merged_v5) <- "condition"
+CV <- subset(merged_v5, idents = "CV")
+CV[[]]
+Idents(CV) <- "res0.5_20220228"
+unique(Idents(CV))
+```
+
+```{r}
+LRE.markers <- FindMarkers(CV, ident.1 = "LREs")
+```
+
+```{r}
+list_3 <- c("chia.2", "fabp2", "fabp1b.1", "apobb.1", "apoa4b.1", "apoa1a", "tm4sf4", "afp4.1", "apoc2", "lrp2b", "ctsbb", "ctsl.1", "dab2", "cpvl", "cubn", "tdo2b", "lgmn", "fabp6", "sptbn5")
+# List cannot exceed limited number of genes
+
+p = EnhancedVolcano(LRE_df, x = "avg_log2FC", y = "p_val_adj", lab = LRE_df$gene,
+                    pCutoff = 0.05,
+                    FCcutoff = 0.5,
+                    selectLab = list_3,
+                    drawConnectors = TRUE,
+                    boxedLabels = TRUE,
+                    labSize = 5,
+                    legendLabels=c('NS','Log (base 2) FC > 0.5','P < 0.05',
+      'P < 0.05 & Log (base 2) FC > 0.5'),
+      legendPosition = 'right') + ggtitle("LREs: cluster markers in CV condition")
+#p + ggplot2::coord_cartesian(xlim=c(-2.75, 1.5))
+p 
+```
+
+## S4B
+
+```{r}
+list_4 <- c("chia.2", "fabp2", "apobb.1", "apoa4b.1", "apoa1a", "tm4sf4", "afp4.1", "apoc2", "apoc1", "lrp2b", "lgmn", "ctsbb", "ctsl.1", "dab2", "cpvl", "cubn", "tdo2b", "fabp6", "sptbn5")
+# Removed fabp1b because it would not fit on the plot 
+
+p = EnhancedVolcano(Ant_df, x = "avg_log2FC", y = "p_val_adj", lab = Ant_df$gene,
+                    pCutoff = 0.05,
+                    FCcutoff = 0.5,
+                    selectLab = list_4,
+                    drawConnectors = TRUE,
+                    boxedLabels = TRUE,
+                    labSize = 5,
+                    legendLabels=c('NS','Log (base 2) FC > 0.5','P < 0.05',
+      'P < 0.05 & Log (base 2) FC > 0.5'),
+      legendPosition = 'right') + ggtitle("Anterior: cluster markers in CV condition")
+#p + ggplot2::coord_cartesian(xlim=c(-2.75, 1.5))
+p 
+```
+
+## S4C
+
+```{r}
+Idents(merged_v5) <- "condition"
+CV <- subset(merged_v5, idents = "CV")
+CV[[]]
+```
+
+
+```{r}
+title <- ("CV cells: mCherry+ markers")
+cell_typeA_marker_gene_list <- list(c("ctsbb", "lrp2b", "ctsl.1", "dab2", "cpvl", "cubn", "tdo2b", "lgmn", "fabp6", "sptbn5"))
+object <- AddModuleScore(object = CV, features = cell_typeA_marker_gene_list, name = "cell_typeA_score")
+p = FeaturePlot_scCustom(seurat_object = object, colors_use = viridis_magma_dark_high, features = "cell_typeA_score1", pt.size = 0.75, split.by = "celltype") 
+p
+```
+
+## S4D
+
+```{r}
+title <- ("CV cells: mCherry- markers")
+cell_typeA_marker_gene_list <- list(c("fabp2", "chia.2", "fabp1b.1", "apobb.1", "apoa4b.1", "apoa1a", "tm4sf4", "afp4.1", "apoc2", "apoc1"))
+object <- AddModuleScore(object = CV, features = cell_typeA_marker_gene_list, name = "cell_typeA_score")
+p = FeaturePlot_scCustom(seurat_object = object, colors_use = viridis_magma_dark_high, features = "cell_typeA_score1", pt.size = 0.75, split.by = "celltype") 
+p
+```
+
+# Figure 5
+
+## 5A
+
+```{r}
+LRE_cluster = subset(merged_v5, idents = c("Ileocytes", "Anterior LREs", "Posterior LREs", "Goblet", "Pharnyx, esophagus, cloaca 1"))
+LRE_cluster[[]]
+```
+
+```{r}
+Idents(LRE_cluster) <- "condition"
+CV_LRE_cluster <- subset(LRE_cluster, ident = "CV")
+GF_LRE_cluster <- subset(LRE_cluster, ident = "GF")
+Idents(CV_LRE_cluster) <- "res0.5_20240415"
+Idents(GF_LRE_cluster) <- "res0.5_20240415"
+```
+
+```{r}
+DimPlot(merged_v5)
+p = DimPlot(CV_LRE_cluster) + ggtitle("LREs and neighbors")
+p
+```
+
+## 5B
+
+```{r}
+all.genes <- rownames(merged_v5)
+merged_v5_scale <- ScaleData(merged_v5, features = all.genes)
+merged_v5_scale[["RNA"]]$scale.data
+```
+
+```{r}
+Idents(object = merged_v5_scale) <- "condition"
+CV <- subset(merged_v5_scale, ident = "CV")
+CV[[]]
+GF <- subset(merged_v5_scale, ident = "GF")
+GF[[]]
+
+Idents(GF) <- "res0.5_20240415"
+Idents(CV) <- "res0.5_20240415"
+```
+
+```{r}
+GF_Select_Clusters = subset(GF, idents = c("Ileocytes", "Posterior LREs", "Anterior LREs", "Anterior enterocytes", "Goblet", "Pharnyx, esophagus, cloaca 1"))
+
+levels(GF_Select_Clusters) <- c("Anterior enterocytes", "Ileocytes", "Anterior LREs", "Posterior LREs", "Goblet", "Pharnyx, esophagus, cloaca 1")
+
+title <- ("Lysosomal genes (GF)")
+
+lyso_genes = c("ctsbb", "ctsl.1", "naga", "ctsh", "lgmn", "fuca2", "atp6v0ca", "man2b1", "hexb", "ctsz")
+
+p2 = DoHeatmap(subset(GF_Select_Clusters, downsample = 100), features = lyso_genes, label = FALSE) 
+
+p2
+```
+
+## 5C
+
+```{r}
+Idents(merged_v5) <- "condition"
+CV = subset(merged_v5, ident = "CV")
+Idents(CV) <- "res0.5_20240415"
+CV[[]]
+```
+
+```{r}
+CV_LREs = subset(CV, idents = c("Anterior LREs", "Posterior LREs", "Goblet", "Pharnyx, esophagus, cloaca 1", "Ileocytes"))
+CV_LREs[[]]
+```
+
+```{r}
+title <- ("Bile acid genes: slc10a2, fabp6")
+bile_genes <- c("slc10a2", "fabp6")
+
+object <- AddModuleScore(object = CV_LREs, features = bile_genes, name = "cell_typeA_score")
+p = FeaturePlot_scCustom(seurat_object = object, colors_use = viridis_magma_dark_high, features = "cell_typeA_score1", pt.size = 0.75) + ggtitle(title)
+p
+```
+
+## 5D
+
+```{r}
+all.genes <- rownames(merged_v5)
+merged_v5_scale <- ScaleData(merged_v5, features = all.genes)
+merged_v5_scale[["RNA"]]$scale.data
+```
+
+```{r}
+Idents(object = merged_v5_scale) <- "condition"
+CV <- subset(merged_v5_scale, ident = "CV")
+CV[[]]
+GF <- subset(merged_v5_scale, ident = "GF")
+GF[[]]
+
+Idents(GF) <- "res0.5_20240415"
+Idents(CV) <- "res0.5_20240415"
+```
+
+```{r}
+CV_Select_Clusters = subset(CV, idents = c("Ileocytes", "Posterior LREs", "Anterior LREs", "Anterior enterocytes", "Goblet", "Pharnyx, esophagus, cloaca 1"))
+levels(CV_Select_Clusters) <- c("Anterior enterocytes", "Ileocytes", "Anterior LREs", "Posterior LREs", "Goblet", "Pharnyx, esophagus, cloaca 1")
+
+tryptophan_genes = c("fabp6", "slc10a2", "kmo", "tdo2b", "tdo2a", "ddc", "aldh9a1a.1", "haao", "kynu")
+
+p2 = DoHeatmap(subset(CV_Select_Clusters, downsample = 100), features = tryptophan_genes, label = FALSE)
+
+p2
+```
+
+## 5E
+
+```{r}
+Idents(merged_v5) <- "res0.5_20240415"
+unique(Idents(merged_v5))
+```
+
+```{r}
+LRE_cluster = subset(merged_v5, idents = c("Ileocytes", "Anterior LREs", "Posterior LREs", "Goblet", "Pharnyx, esophagus, cloaca 1"))
+LRE_cluster[[]]
+```
+
+```{r}
+Idents(LRE_cluster) <- "condition"
+CV_LRE_cluster <- subset(LRE_cluster, ident = "CV")
+GF_LRE_cluster <- subset(LRE_cluster, ident = "GF")
+Idents(CV_LRE_cluster) <- "res0.5_20240415"
+Idents(GF_LRE_cluster) <- "res0.5_20240415"
+```
+
+```{r}
+title <- ("kmo and tdo2a (CV)")
+tryp_genes <- c("tdo2a", "kmo")
+
+object <- AddModuleScore(object = CV_LRE_cluster, features = tryp_genes, name = "cell_typeA_score")
+p = FeaturePlot_scCustom(seurat_object = object, colors_use = viridis_magma_dark_high, features = "cell_typeA_score1", pt.size = 0.75) + ggtitle(title)
+p
+```
+
+## 5F
+
+```{r}
+title <- ("Peptidase expression in LRE1")
+genes <- c("cpvl", "pm20d1.2", "ctsla")
+
+p = EnhancedVolcano(markers, x = "avg_log2FC", y = "p_val_adj", lab = markers$gene,
+                    pCutoff = 0.05,
+                    FCcutoff = 0.5,
+                    selectLab = genes,
+                    drawConnectors = TRUE,
+                    boxedLabels = TRUE,
+                    labSize = 7,
+                    legendLabels=c('NS','Log (base 2) FC > 0.5','P < 0.05',
+      'P < 0.05 & Log (base 2) FC > 0.5'),
+      legendPosition = 'right') + ggtitle(title)
+#p + ggplot2::coord_cartesian(xlim=c(-2.75, 1.5))
+p 
+```
+
+## 5G
+
+```{r}
+bacteria_genes <- c("lrba", "myd88", "jund", "hsp90b1", "ehd1b")
+
+p = EnhancedVolcano(LRE1_df, x = "avg_log2FC", y = "p_val_adj", lab = LRE1_df$gene,
+                    pCutoff = 0.05,
+                    FCcutoff = 0.5,
+                    selectLab = bacteria_genes,
+                    drawConnectors = TRUE,
+                    boxedLabels = TRUE,
+                    labSize = 7,
+                    legendLabels=c('NS','Log (base 2) FC > 0.5','P < 0.05',
+      'P < 0.05 & Log (base 2) FC > 0.5'),
+      legendPosition = 'right') + ggtitle("LRE1: GF vs CV condition, Bacteria-responsive genes")
+#p + ggplot2::coord_cartesian(xlim=c(-2.75, 1.5))
+p 
+```
+
+## 5H
+
+```{r}
+LRE_cluster = subset(merged_v5, idents = c("Ileocytes", "Anterior LREs", "Posterior LREs", "Goblet", "Pharnyx, esophagus, cloaca 1"))
+LRE_cluster[[]]
+```
+
+```{r}
+Idents(LRE_cluster) <- "condition"
+CV_LRE_cluster <- subset(LRE_cluster, ident = "CV")
+GF_LRE_cluster <- subset(LRE_cluster, ident = "GF")
+Idents(CV_LRE_cluster) <- "res0.5_20240415"
+Idents(GF_LRE_cluster) <- "res0.5_20240415"
+```
+
+```{r}
+title <- ("Dopamine genes")
+dopa_genes <- c("ddc", "gnas")
+
+object <- AddModuleScore(object = LRE_cluster, features = dopa_genes, name = "cell_typeA_score")
+p = FeaturePlot_scCustom(seurat_object = object, colors_use = viridis_magma_dark_high, features = "cell_typeA_score1", pt.size = 1, split.by = "condition")
+p
+```
+
+## 5I
+
+```{r}
+Idents(merged_v5) <- "res0.5_20240415"
+LRE_cluster = subset(merged_v5, idents = c("Ileocytes", "Anterior LREs", "Posterior LREs", "Goblet", "Pharnyx, esophagus, cloaca 1"))
+LRE_cluster[[]]
+```
+
+```{r}
+Idents(LRE_cluster) <- "condition"
+CV_LRE_cluster <- subset(LRE_cluster, ident = "CV")
+GF_LRE_cluster <- subset(LRE_cluster, ident = "GF")
+Idents(CV_LRE_cluster) <- "res0.5_20240415"
+Idents(GF_LRE_cluster) <- "res0.5_20240415"
+```
+
+```{r}
+Iron <- c("meltf", "slc40a1", "slc11a2")
+
+object <- AddModuleScore(object = LRE_cluster, features = Iron, name = "cell_typeA_score")
+p = FeaturePlot_scCustom(seurat_object = object, colors_use = viridis_magma_dark_high, features = "cell_typeA_score1", pt.size = 1, split.by = "condition") 
+p
+```
+
+# Figure 5-figure supplement 1
+
+## S5A
+
+```{r}
+markers_CV_LRE2_up <- KEGG_CV_LRE2_UP %>% filter(avg_log2FC > 0.5, p_val_adj < 0.05) %>% pull(gene)
+head(markers_CV_LRE2_up) 
+markers_CV_LRE2_up <- unlist(mget(markers_CV_LRE2_up, envir=org.Dr.egSYMBOL2EG, ifnotfound = NA))  
+KEGG_CV_LRE2_UP <- enrichKEGG(gene = markers_CV_LRE2_up, organism = 'dre', pvalueCutoff = 0.05)
+```
+
+```{r}
+title <- ("KEGG: Enriched in LRE2 (CV)")
+KEGG_CV_LRE2_UP_plot <- dotplot(KEGG_CV_LRE2_UP, showCategory=20) + ggtitle(title)
+KEGG_CV_LRE2_UP_plot
+```
+
+## S5B
+
+```{r}
+markers_GF_LRE2_up <- LRE2_GF_df %>% filter(avg_log2FC > 0.5, p_val_adj < 0.05) %>% pull(gene)
+head(markers_GF_LRE2_up) 
+markers_GF_LRE2_up <- unlist(mget(markers_GF_LRE2_up, envir=org.Dr.egSYMBOL2EG, ifnotfound = NA))  
+KEGG_GF_LRE2_UP <- enrichKEGG(gene = markers_GF_LRE2_up, organism = 'dre', pvalueCutoff = 0.05)
+```
+
+
+```{r}
+title <- ("KEGG: Enriched in LRE2 (GF)")
+KEGG_GF_LRE2_UP_plot <- dotplot(KEGG_GF_LRE2_UP, showCategory=20) + ggtitle(title)
+KEGG_GF_LRE2_UP_plot
+```
+
+## S5C
+
+```{r}
+markers_CV_LRE1_up <- LRE1_CV_df %>% filter(avg_log2FC > 0.5, p_val_adj < 0.05) %>% pull(gene)
+head(markers_CV_LRE1_up) 
+markers_CV_LRE1_up <- unlist(mget(markers_CV_LRE1_up, envir=org.Dr.egSYMBOL2EG, ifnotfound = NA))  
+KEGG_CV_LRE1_UP <- enrichKEGG(gene = markers_CV_LRE1_up, organism = 'dre', pvalueCutoff = 0.05)
+```
+
+
+```{r}
+title <- ("KEGG: Enriched in LRE1 (CV)")
+KEGG_CV_LRE1_UP_plot <- dotplot(KEGG_CV_LRE1_UP, showCategory=20) + ggtitle(title)
+KEGG_CV_LRE1_UP_plot
+```
+
+## S5D
+
+```{r}
+markers_GF_LRE1_up <- LRE1_GF_df %>% filter(avg_log2FC > 0.5, p_val_adj < 0.05) %>% pull(gene)
+head(markers_GF_LRE1_up) 
+markers_GF_LRE1_up <- unlist(mget(markers_GF_LRE1_up, envir=org.Dr.egSYMBOL2EG, ifnotfound = NA))  
+KEGG_GF_LRE1_UP <- enrichKEGG(gene = markers_GF_LRE1_up, organism = 'dre', pvalueCutoff = 0.05)
+```
+
+
+```{r}
+title <- ("KEGG: Enriched in LRE1 (GF)")
+KEGG_GF_LRE1_UP_plot <- dotplot(KEGG_GF_LRE1_UP, showCategory=20) + ggtitle(title)
+KEGG_GF_LRE1_UP_plot
+```
+
+## S5E
+
+```{r}
+all.genes <- rownames(merged_v5)
+merged_v5_scale <- ScaleData(merged_v5, features = all.genes)
+merged_v5_scale[["RNA"]]$scale.data
+```
+
+```{r}
+Idents(object = merged_v5_scale) <- "condition"
+CV <- subset(merged_v5_scale, ident = "CV")
+CV[[]]
+GF <- subset(merged_v5_scale, ident = "GF")
+GF[[]]
+
+Idents(GF) <- "res0.5_20240415"
+Idents(CV) <- "res0.5_20240415"
+```
+
+```{r}
+GF_Select_Clusters = subset(GF, idents = c("Ileocytes", "Posterior LREs", "Anterior LREs", "Anterior enterocytes", "Goblet", "Pharnyx, esophagus, cloaca 1"))
+
+levels(GF_Select_Clusters) <- c("Anterior enterocytes", "Ileocytes", "Anterior LREs", "Posterior LREs", "Goblet", "Pharnyx, esophagus, cloaca 1")
+
+title <- ("Lysosomal genes (GF)")
+
+lyso_genes = c("ctsbb", "ctsl.1", "naga", "ctsh", "lgmn", "fuca2", "atp6v0ca", "man2b1", "hexb", "ctsz")
+
+p2 = DoHeatmap(subset(GF_Select_Clusters, downsample = 100), features = lyso_genes, label = FALSE) 
+
+p2
+```
+
+## S5G
+
+```{r}
+p = EnhancedVolcano(LRE2_df, x = "avg_log2FC", y = "p_val_adj", lab = LRE2_df$gene,
+                    pCutoff = 0.05,
+                    FCcutoff = 0.5,
+                    selectLab = tryp_genes,
+                    drawConnectors = TRUE,
+                    boxedLabels = TRUE,
+                    legendLabels=c('NS','Log (base 2) FC > 0.5','P < 0.05',
+      'P < 0.05 & Log (base 2) FC > 0.5'),
+      legendPosition = 'right') + ggtitle("LRE2 (CV): tryptophan metabolism")
+#p + ggplot2::coord_cartesian(xlim=c(-2.75, 1.5))
+p 
+```
+
+## S5H
+
+```{r}
+p = EnhancedVolcano(LRE1_df, x = "avg_log2FC", y = "p_val_adj", lab = LRE2_df$gene,
+                    pCutoff = 0.05,
+                    FCcutoff = 0.5,
+                    selectLab = tryp_genes,
+                    drawConnectors = TRUE,
+                    boxedLabels = TRUE,
+                    legendLabels=c('NS','Log (base 2) FC > 0.5','P < 0.05',
+      'P < 0.05 & Log (base 2) FC > 0.5'),
+      legendPosition = 'right') + ggtitle("LRE2 (CV): tryptophan metabolism")
+#p + ggplot2::coord_cartesian(xlim=c(-2.75, 1.5))
+p 
+```
+
+## S5I
+
+```{r}
+title <- ("Peptidase expression in LRE1 vs LRE2 (CV)")
+genes <- c("cst14a.2", "ctsl.1", "cpvl", "ctsla", "pm20d1.2", "spint1a")
+
+p = EnhancedVolcano(markers, x = "avg_log2FC", y = "p_val_adj", lab = markers$gene,
+                    pCutoff = 0.05,
+                    FCcutoff = 0.5,
+                    selectLab = genes,
+                    drawConnectors = TRUE,
+                    boxedLabels = TRUE,
+                    legendLabels=c('NS','Log (base 2) FC > 0.5','P < 0.05',
+      'P < 0.05 & Log (base 2) FC > 0.5'),
+      legendPosition = 'right') + ggtitle(title)
+#p + ggplot2::coord_cartesian(xlim=c(-2.75, 1.5))
+p 
+```
+
+## S5J
+
+```{r}
+p = EnhancedVolcano(LRE2_df, x = "avg_log2FC", y = "p_val_adj", lab = LRE2_df$gene,
+                    pCutoff = 0.05,
+                    FCcutoff = 0.5,
+                    legendLabels=c('NS','Log (base 2) FC > 0.5','P < 0.05',
+      'P < 0.05 & Log (base 2) FC > 0.5'),
+      legendPosition = 'right') + ggtitle("Anterior LREs: GF vs CV")
+#p + ggplot2::coord_cartesian(xlim=c(-2.75, 1.5))
+p 
+```
+
+## S5K
+
+```{r}
+p = EnhancedVolcano(LRE1_df, x = "avg_log2FC", y = "p_val_adj", lab = LRE1_df$gene,
+                    pCutoff = 0.05,
+                    FCcutoff = 0.5,
+                    legendLabels=c('NS','Log (base 2) FC > 0.5','P < 0.05',
+      'P < 0.05 & Log (base 2) FC > 0.5'),
+      legendPosition = 'right') + ggtitle("Posterior LREs: GF vs CV")
+#p + ggplot2::coord_cartesian(xlim=c(-2.75, 1.5))
+p 
+```
+
+
+
+
+
+
+
+
+
+
 
