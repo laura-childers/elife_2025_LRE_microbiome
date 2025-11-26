@@ -1,0 +1,364 @@
+---
+title: "Figure_Scripts"
+output: html_document
+date: "2025-06-17"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Library 
+
+```{r}
+library(SeuratObject)
+library(Seurat)
+library(SeuratData)
+library(patchwork)
+library(dplyr)
+library(cowplot)
+library(patchwork)
+library(ggplot2)
+library(data.table)
+library(writexl)
+library(readxl)
+library(clusterProfiler)
+library(org.Mm.eg.db)
+library(org.Dr.eg.db)
+library(tibble)
+library(devtools)
+library(presto)
+library(readxl)
+```
+
+# Load Seurat Object
+
+```{r}
+merged <- readRDS("~/single_cell_RNAseq/Seurat_objects/Integrated_mouse_fish_res0-3_Revised_5-30-25.rds")
+```
+
+# Heatmap
+
+## Subset fish and mice
+```{r}
+Idents(merged) <- "organism"
+fish <- subset(merged, ident = "fish")
+mouse <- subset (merged, ident = "mouse")
+```
+
+```{r}
+saveRDS(fish, "~/single_cell_RNAseq/Seurat_objects/Integrated_mouse_fish_res0-3_Revised_5-30-25_Fish.rds")
+```
+
+```{r}
+saveRDS(mouse, "~/single_cell_RNAseq/Seurat_objects/Integrated_mouse_fish_res0-3_Revised_5-30-25_Mouse.rds")
+```
+
+## LRE vs IECs from fish cells only - heatmap 
+
+```{r}
+Idents(fish) <- "LRE"
+all.genes <- rownames(fish)
+fish_LRE_IEC_scale <- ScaleData(fish, features = all.genes)
+```
+
+```{r}
+title <- ("Fish LRE-enriched genes (Fish LRE and IEC cells only)")
+LRE_genes <- c("Lrp2", "Ctsb", "Sptbn5", "Cpvl", "Cubn", "Dab2", "Scpep1", "Naga", "Dpep1", "Ctsh", "Folr1", "Lgmn", "Fabp6", "Fuca2", "Lrpap1")
+  
+p = DoHeatmap(subset(fish_LRE_IEC_scale, downsample = 100), features = LRE_genes, label = TRUE) + 
+  theme(legend.text=element_text(size=14), legend.title=element_text(size=16)) +
+  ggtitle(title)
+p
+
+#ggsave("~/single_cell_RNAseq/Heatmap/Integrated_mouse_fish_res0-3_LRE-genes_All-clusters_Fish_LRE-IEC.tiff", height = 7, width = 12)
+```
+
+## intestinal segment from mouse only - heatmap
+```{r}
+Idents(mouse) <- "celltype"
+all.genes <- rownames(mouse)
+merged_scale <- ScaleData(mouse, features = all.genes)
+```
+
+```{r}
+title <- ("Fish LRE-enriched genes (Mouse cells only - segments)")
+LRE_genes <- c("Lrp2", "Ctsb", "Sptbn5", "Cpvl", "Cubn", "Dab2", "Scpep1", "Naga", "Dpep1", "Ctsh", "Folr1", "Lgmn", "Fabp6", "Fuca2", "Lrpap1")
+  
+p = DoHeatmap(subset(merged_scale, downsample = 100), features = LRE_genes, label = TRUE) + 
+  theme(legend.text=element_text(size=14), legend.title=element_text(size=16)) +
+  ggtitle(title)
+p
+
+#ggsave("~/single_cell_RNAseq/Heatmap/Integrated_mouse_fish_res0-3_LRE-genes_All-clusters_Mouse_Ileum-Jejunum.tiff", height = 7, width = 12)
+```
+
+# Feature Plot - LREs in mouse-fish dataset
+
+```{r}
+Idents(merged) <- "LRE"
+DimPlot(merged, cols = c("lightgray", "green", "magenta"))
+
+Idents(merged) <- "LRE_region"
+DimPlot(merged, cols = c("lightgray", "green", "magenta", "blue"))
+```
+
+# KEGG Pathway Analysis
+
+## Mouse cells - Jejunum
+
+```{r}
+Idents(merged) <- "organism"
+mouse <- subset(merged, idents = "mouse")
+```
+
+```{r}
+Idents(mouse) <- "Intestinal_region"
+Mouse_J.markers <- FindMarkers(mouse, ident.1 = "Jejunum")
+head(Mouse_J.markers, n = 5)
+
+Mouse_J.markers$Gene <- rownames(Mouse_J.markers)
+head(Mouse_J.markers)
+```
+
+```{r}
+markers <- Mouse_J.markers %>% filter(avg_log2FC > 0.5, p_val_adj < 0.05) %>% pull(Gene)
+markers <- unlist(mget(markers, envir=org.Mm.egSYMBOL2EG, ifnotfound = NA))  
+markers <- enrichKEGG(gene = markers, organism = 'mmu', pvalueCutoff = 0.05)
+
+# Cellular Processes 
+
+CP <- filter(markers, category == "Cellular Processes")
+
+title <- ("KEGG: Cellular Processes, Mouse Jejunal Region")
+Mouse_Il_Plot <- dotplot(CP, showCategory=12) + ggtitle(title)
+Mouse_Il_Plot
+
+# Metabolism
+
+CP <- filter(markers, category == "Metabolism")
+
+title <- ("KEGG: Metabolism, Mouse Jejunal Region")
+Mouse_Il_Plot <- dotplot(CP, showCategory=12) + ggtitle(title)
+Mouse_Il_Plot
+
+# Organismal systems
+
+CP <- filter(markers, category == "Organismal Systems")
+
+title <- ("KEGG: Organismal Systems, Mouse Jejunal Region")
+Mouse_Il_Plot <- dotplot(CP, showCategory=12) + ggtitle(title)
+Mouse_Il_Plot
+```
+
+## Fish cells - anterior enterocytes (homologous to jejunum)
+
+```{r}
+Idents(merged) <- "organism"
+fish <- subset(merged, idents = "fish")
+```
+
+```{r}
+Idents(fish) <- "res0.5_20240415"
+Fish_IEC.markers <- FindMarkers(fish, ident.1 = "Anterior enterocytes")
+head(Fish_IEC.markers, n = 5)
+
+Fish_IEC.markers$Gene <- rownames(Fish_IEC.markers)
+head(Fish_IEC.markers)
+
+#write_xlsx(Fish_IEC.markers, "~/single_cell_RNAseq/KEGG/FindMarkers_Integrated_Fish-Mouse_res-0.3_Anterior-enterocytes_24-5-29.xlsx")
+```
+
+
+```{r}
+#Fish_IEC.markers <- read_xlsx("~/single_cell_RNAseq/KEGG/FindMarkers_Integrated_Fish-Mouse_res-0.3_Anterior-enterocytes_24-5-29.xlsx")
+markers <- Fish_IEC.markers %>% filter(avg_log2FC > 0.5, p_val_adj < 0.05) %>% pull(Gene)
+markers <- unlist(mget(markers, envir=org.Mm.egSYMBOL2EG, ifnotfound = NA))  
+markers <- enrichKEGG(gene = markers, organism = 'mmu', pvalueCutoff = 0.05)
+
+#df <- as.data.frame(markers)
+#df
+#write_xlsx(df, "~/single_cell_RNAseq/KEGG/KEGG_Integrated_Fish-Mouse_res-0.3_Fish_IECs_24-5-29.xlsx")
+#markers <- read_xlsx("~/single_cell_RNAseq/KEGG/KEGG_Integrated_Fish-Mouse_res-0.3_Fish_IECs_24-5-29.xlsx")
+
+# Cellular Processes 
+
+CP <- filter(markers, category == "Cellular Processes")
+
+title <- ("KEGG: Cellular Processes, Fish IECs")
+Mouse_Il_Plot <- dotplot(CP, showCategory=12) + ggtitle(title)
+Mouse_Il_Plot
+
+#ggsave(plot = Mouse_Il_Plot, filename = "~/single_cell_RNAseq/KEGG/KEGG_Fish_Anterior-enterocytes_Cellular_Processes_5-29-25.tiff", width = 7, height = 8)
+
+# Metabolism
+
+CP <- filter(markers, category == "Metabolism")
+
+title <- ("KEGG: Metabolism, Fish IECs")
+Mouse_Il_Plot <- dotplot(CP, showCategory=12) + ggtitle(title)
+Mouse_Il_Plot
+
+#ggsave(plot = Mouse_Il_Plot, filename = "~/single_cell_RNAseq/KEGG/KEGG_Fish_Anterior-enterocytes_Metabolism_5-29-25.tiff", width = 7, height = 8)
+
+# Organismal systems
+
+CP <- filter(markers, category == "Organismal Systems")
+
+title <- ("KEGG: Organismal Systems, Fish IECs")
+Mouse_Il_Plot <- dotplot(CP, showCategory=12) + ggtitle(title)
+Mouse_Il_Plot
+
+#ggsave(plot = Mouse_Il_Plot, filename = "~/single_cell_RNAseq/KEGG/KEGG_Fish_Anterior-enterocytes_Organismal-systems_5-29-25.tiff", width = 7, height = 8)
+```
+
+## Mouse cells - Ileum 
+
+```{r}
+Idents(merged) <- "organism"
+mouse <- subset(merged, idents = "mouse")
+```
+
+```{r}
+Idents(mouse) <- "Intestinal_region"
+Mouse_I.markers <- FindMarkers(mouse, ident.1 = "Ileum")
+head(Mouse_I.markers, n = 5)
+
+Mouse_I.markers$Gene <- rownames(Mouse_I.markers)
+head(Mouse_I.markers)
+```
+
+```{r}
+markers <- Mouse_I.markers %>% filter(avg_log2FC > 0.5, p_val_adj < 0.05) %>% pull(Gene)
+markers <- unlist(mget(markers, envir=org.Mm.egSYMBOL2EG, ifnotfound = NA))  
+markers <- enrichKEGG(gene = markers, organism = 'mmu', pvalueCutoff = 0.05)
+
+# Cellular Processes 
+
+CP <- filter(markers, category == "Cellular Processes")
+
+title <- ("KEGG: Cellular Processes, Mouse Ileal Region")
+Mouse_Il_Plot <- dotplot(CP, showCategory=12) + ggtitle(title)
+Mouse_Il_Plot
+
+# Metabolism
+
+CP <- filter(markers, category == "Metabolism")
+
+title <- ("KEGG: Metabolism, Mouse Ileal Region")
+Mouse_Il_Plot <- dotplot(CP, showCategory=12) + ggtitle(title)
+Mouse_Il_Plot
+
+# Organismal systems
+
+CP <- filter(markers, category == "Organismal Systems")
+
+title <- ("KEGG: Organismal Systems, Mouse Ileal Region")
+Mouse_Il_Plot <- dotplot(CP, showCategory=12) + ggtitle(title)
+Mouse_Il_Plot
+```
+
+## Fish cells - LRE 
+
+```{r}
+Idents(merged) <- "organism"
+fish <- subset(merged, idents = "fish")
+```
+
+```{r}
+Idents(fish) <- "LRE"
+Fish_I.markers <- FindMarkers(fish, ident.1 = "LRE")
+head(Fish_I.markers, n = 5)
+
+Fish_I.markers$Gene <- rownames(Fish_I.markers)
+head(Fish_I.markers)
+```
+
+```{r}
+markers <- Fish_I.markers %>% filter(avg_log2FC > 0.5, p_val_adj < 0.05) %>% pull(Gene)
+markers <- unlist(mget(markers, envir=org.Mm.egSYMBOL2EG, ifnotfound = NA))  
+markers <- enrichKEGG(gene = markers, organism = 'mmu', pvalueCutoff = 0.05)
+
+# Cellular Processes 
+
+CP <- filter(markers, category == "Cellular Processes")
+
+title <- ("KEGG: Cellular Processes, Fish Ileal Region")
+Mouse_Il_Plot <- dotplot(CP, showCategory=12) + ggtitle(title)
+Mouse_Il_Plot
+
+# Metabolism
+
+CP <- filter(markers, category == "Metabolism")
+
+title <- ("KEGG: Metabolism, Fish Ileal Region")
+Mouse_Il_Plot <- dotplot(CP, showCategory=12) + ggtitle(title)
+Mouse_Il_Plot
+
+# Organismal systems
+
+CP <- filter(markers, category == "Organismal Systems")
+
+title <- ("KEGG: Organismal Systems, Fish Ileal Region")
+Mouse_Il_Plot <- dotplot(CP, showCategory=12) + ggtitle(title)
+Mouse_Il_Plot
+```
+
+## Mouse cells - cluster 2, 3, 9 (mature ileocytes)
+
+```{r}
+FeaturePlot(mouse, features = "Lrp2")
+DimPlot(mouse, label = "TRUE")
+```
+
+
+```{r}
+Idents(merged) <- "organism"
+mouse <- subset(merged, idents = "mouse")
+mouse[[]]
+```
+
+```{r}
+Idents(mouse) <- "seurat_clusters"
+Mouse_3.markers <- FindMarkers(mouse, ident.1 = c("2", "3", "9"))
+head(Mouse_3.markers, n = 5)
+
+Mouse_3.markers$Gene <- rownames(Mouse_3.markers)
+head(Mouse_3.markers)
+```
+
+```{r}
+markers <- Mouse_3.markers %>% filter(avg_log2FC > 0.5, p_val_adj < 0.05) %>% pull(Gene)
+markers <- unlist(mget(markers, envir=org.Mm.egSYMBOL2EG, ifnotfound = NA))  
+markers <- enrichKEGG(gene = markers, organism = 'mmu', pvalueCutoff = 0.05)
+
+# Cellular Processes 
+
+CP <- filter(markers, category == "Cellular Processes")
+
+title <- ("KEGG: Cellular Processes, Mouse Cluster 2, 3, 9")
+Mouse_Il_Plot <- dotplot(CP, showCategory=12) + ggtitle(title)
+Mouse_Il_Plot
+
+# Metabolism
+
+CP <- filter(markers, category == "Metabolism")
+
+title <- ("KEGG: Metabolism, Mouse Cluster 2, 3, 9")
+Mouse_Il_Plot <- dotplot(CP, showCategory=12) + ggtitle(title)
+Mouse_Il_Plot
+
+# Organismal systems
+
+CP <- filter(markers, category == "Organismal Systems")
+
+title <- ("KEGG: Organismal Systems, Mouse Cluster 2, 3, 9")
+Mouse_Il_Plot <- dotplot(CP, showCategory=12) + ggtitle(title)
+Mouse_Il_Plot
+```
+
+
+```{r}
+sessionInfo()
+```
+
